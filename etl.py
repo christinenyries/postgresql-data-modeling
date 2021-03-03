@@ -74,7 +74,7 @@ def process_log_df(cursor, df):
     print("Table 'time' successfully filled...")
 
     # fill users table
-    user_cols = [
+    user_cols = [ # order matters
         "userId",
         "firstName",
         "lastName",
@@ -86,7 +86,7 @@ def process_log_df(cursor, df):
     print("Table 'users' successfully filled...")
 
     # fill songplays table
-    songplay_cols = [
+    songplay_cols = [ # order matters
         "ts",
         "userId",
         "sessionId",
@@ -98,7 +98,7 @@ def process_log_df(cursor, df):
         "length",
         "artist",
     ]
-    other_foreign_key_cols = [
+    other_foreign_key_cols = [ # order matters
         'song_id',
         'artist_id',
     ]
