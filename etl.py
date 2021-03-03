@@ -1,95 +1,136 @@
-import os
-import glob
-import psycopg2
+import numpy as np
 import pandas as pd
+
+from pathlib2 import Path
+from psycopg2 import extras
+
 from sql_queries import *
-
-
-def process_song_file(cur, filepath):
-    # open song file
-    df = pd.read_json(filepath, lines=True)
-
-    # insert artist record
-    artist_data = artist_data = [df.at[0, 'artist_id'], df.at[0, 'artist_name'],
-                                 df.at[0, 'artist_location'], df.at[0, 'artist_latitude'], df.at[0, 'artist_longitude']]
-    cur.execute(artist_table_insert, artist_data)
-
-    # insert song record
-    song_data = [df.at[0, 'song_id'], df.at[0, 'title'],
-                 df.at[0, 'artist_id'], int(df.at[0, 'year']), df.at[0, 'duration']]
-    cur.execute(song_table_insert, song_data)
-
-
-def process_log_file(cur, filepath):
-    # open log file
-    df = pd.read_json(filepath, lines=True)
-
-    # filter by NextSong action
-    df = df[df['page'] == 'NextSong']
-
-    # convert timestamp column to datetime
-    t = pd.to_datetime(df['ts'], unit='ms')
-
-    # insert time data records
-    time_data = [t, t.dt.hour, t.dt.day, t.dt.week, t.dt.month, t.dt.year, t.dt.dayofweek]
-    column_labels = ['ts', 'hour', 'day', 'week', 'month', 'year', 'dayofweek']
-    time_df = pd.DataFrame(dict(zip(column_labels, time_data)))
-
-    for i, row in time_df.iterrows():
-        cur.execute(time_table_insert, list(row))
-
-    # load user table
-    user_df = df.loc[:, ['userId', 'firstName', 'lastName', 'gender', 'level']]
-
-    # insert user records
-    for i, row in user_df.iterrows():
-        cur.execute(user_table_insert, row)
-
-    # insert songplay records
-    for index, row in df.iterrows():
-
-        # get songid and artistid from song and artist tables
-        cur.execute(song_select, (row.song, row.artist, row.length))
-        results = cur.fetchone()
-
-        if results:
-            songid, artistid = results
-        else:
-            songid, artistid = None, None
-
-        # insert songplay record
-        songplay_data = (pd.to_datetime(row.ts, unit='ms'), row.userId, songid,
-                         artistid, row.sessionId, row.location, row.userAgent)
-        cur.execute(songplay_table_insert, songplay_data)
-
-
-def process_data(cur, conn, filepath, func):
-    # get all files matching extension from directory
-    all_files = []
-    for root, dirs, files in os.walk(filepath):
-        files = glob.glob(os.path.join(root, '*.json'))
-        for f in files:
-            all_files.append(os.path.abspath(f))
-
-    # get total number of files found
-    num_files = len(all_files)
-    print('{} files found in {}'.format(num_files, filepath))
-
-    # iterate over files and process
-    for i, datafile in enumerate(all_files, 1):
-        func(cur, datafile)
-        conn.commit()
-        print('{}/{} files processed.'.format(i, num_files))
+from db_init import connect
 
 
 def main():
-    conn = psycopg2.connect("host=127.0.0.1 dbname=sparkifydb user=student password=student")
-    cur = conn.cursor()
+    with connect("sparkifydb") as cursor:
+        song_df = read_jsons("data/song_data")
+        log_df = read_jsons("data/log_data")
 
-    process_data(cur, conn, filepath='data/song_data', func=process_song_file)
-    process_data(cur, conn, filepath='data/log_data', func=process_log_file)
+        # must run in order
+        process_df(cursor, song_df, process_song_df)
+        process_df(cursor, log_df, process_log_df)
 
-    conn.close()
+
+def read_jsons(path):
+    jsons = Path(path).rglob("*.json")
+    dfs = (pd.read_json(j, orient="records", lines=True) for j in jsons)
+    return pd.concat(dfs, ignore_index=True)
+
+
+def process_df(cursor, df, action):
+    action(cursor, df)
+
+
+def process_song_df(cursor, df):
+    # fill artists table
+    artist_cols = [ # order matters
+        "artist_id",
+        "artist_name",
+        "artist_location",
+        "artist_latitude",
+        "artist_longitude",
+    ]
+    artist_df = df[artist_cols]
+    bulk_insert_into_table(cursor, artist_table_insert, artist_df)
+    print("Table 'artists' successfully filled...")
+
+    # fill songs table
+    song_cols = [ # order matters
+        "song_id",
+        "title",
+        "artist_id",
+        "year",
+        "duration",
+    ]
+    song_df = df[song_cols]
+    bulk_insert_into_table(cursor, song_table_insert, song_df)
+    print("Table 'songs' successfully filled...")
+
+
+def process_log_df(cursor, df):
+    df = df[df["page"] == "NextSong"].copy()
+    df["ts"] = pd.to_datetime(df["ts"], unit="ms")
+
+    # fill time table
+    time_cols = ["ts"]
+    time_df = df[time_cols].copy()
+
+    # order matters
+    time_df['hour'] = time_df["ts"].dt.hour
+    time_df['day'] = time_df["ts"].dt.day
+    time_df['week'] = time_df["ts"].dt.isocalendar().week
+    time_df['month'] = time_df["ts"].dt.month
+    time_df['year'] = time_df["ts"].dt.year
+    time_df['dayofweek'] = time_df["ts"].dt.dayofweek
+
+    bulk_insert_into_table(cursor, time_table_insert, time_df)
+    print("Table 'time' successfully filled...")
+
+    # fill users table
+    user_cols = [
+        "userId",
+        "firstName",
+        "lastName",
+        "gender",
+        "level",
+    ]
+    user_df = df[user_cols]
+    single_insert_into_table(cursor, user_table_insert, user_df)
+    print("Table 'users' successfully filled...")
+
+    # fill songplays table
+    songplay_cols = [
+        "ts",
+        "userId",
+        "sessionId",
+        "location",
+        "userAgent",
+    ]
+    to_get_other_foreign_key_cols = [
+        "song",
+        "length",
+        "artist",
+    ]
+    other_foreign_key_cols = [
+        'song_id',
+        'artist_id',
+    ]
+    temp_df = df[songplay_cols + to_get_other_foreign_key_cols]
+    song_artist_df = select_merged_song_artist_df(cursor)
+    temp_df = temp_df.merge(
+        song_artist_df,
+        how="inner",
+        left_on=["song", "length", "artist"],
+        right_on=["title", "duration", "name"],
+    )
+    songplay_df = temp_df[songplay_cols + other_foreign_key_cols]
+    bulk_insert_into_table(cursor, songplay_table_insert, songplay_df)
+    print("Table 'songplays' successfully filled...")
+
+
+def bulk_insert_into_table(cursor, query, df):
+    values = [tuple(a) for a in df.values]
+    extras.execute_values(cursor, query, values)
+
+def single_insert_into_table(cursor, query, df):
+    for row in df.itertuples(index=False):
+        cursor.execute(query, row)
+
+def select_merged_song_artist_df(cursor):
+    cursor.execute(song_artist_table_select)
+    results = cursor.fetchall()
+
+    columns = (c[0] for c in cursor.description)
+
+    song_artist_df = pd.DataFrame(np.array(results), columns=columns)
+    return song_artist_df
 
 
 if __name__ == "__main__":
