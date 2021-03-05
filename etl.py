@@ -74,6 +74,7 @@ def process_log_df(cursor, df):
     print("Table 'time' successfully filled...")
 
     # fill users table
+    print("Loading data to 'users' table this may take quite a while...")
     user_cols = [ # order matters
         "userId",
         "firstName",

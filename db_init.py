@@ -43,12 +43,12 @@ def create_database(cursor, database):
 def drop_tables(cursor):
     for query in drop_table_queries:
         cursor.execute(query)
-    print(f"Successfully dropped existing tables...")
+    print(f"Dropped existing tables...")
 
 def create_tables(cursor):
     for query in create_table_queries:
         cursor.execute(query)
-    print(f"Successfully created tables...")
+    print(f"Done creating tables...")
 
 if __name__ == "__main__":
     main()
