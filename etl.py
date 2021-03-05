@@ -30,7 +30,7 @@ def process_df(cursor, df, action):
 
 def process_song_df(cursor, df):
     # fill artists table
-    artist_cols = [ # order matters
+    artist_cols = [  # order matters
         "artist_id",
         "artist_name",
         "artist_location",
@@ -42,7 +42,7 @@ def process_song_df(cursor, df):
     print("Table 'artists' successfully filled...")
 
     # fill songs table
-    song_cols = [ # order matters
+    song_cols = [  # order matters
         "song_id",
         "title",
         "artist_id",
@@ -63,19 +63,19 @@ def process_log_df(cursor, df):
     time_df = df[time_cols].copy()
 
     # order matters
-    time_df['hour'] = time_df["ts"].dt.hour
-    time_df['day'] = time_df["ts"].dt.day
-    time_df['week'] = time_df["ts"].dt.isocalendar().week
-    time_df['month'] = time_df["ts"].dt.month
-    time_df['year'] = time_df["ts"].dt.year
-    time_df['dayofweek'] = time_df["ts"].dt.dayofweek
+    time_df["hour"] = time_df["ts"].dt.hour
+    time_df["day"] = time_df["ts"].dt.day
+    time_df["week"] = time_df["ts"].dt.isocalendar().week
+    time_df["month"] = time_df["ts"].dt.month
+    time_df["year"] = time_df["ts"].dt.year
+    time_df["dayofweek"] = time_df["ts"].dt.dayofweek
 
     bulk_insert_into_table(cursor, time_table_insert, time_df)
     print("Table 'time' successfully filled...")
 
     # fill users table
     print("Loading data to 'users' table this may take quite a while...")
-    user_cols = [ # order matters
+    user_cols = [  # order matters
         "userId",
         "firstName",
         "lastName",
@@ -87,7 +87,7 @@ def process_log_df(cursor, df):
     print("Table 'users' successfully filled...")
 
     # fill songplays table
-    songplay_cols = [ # order matters
+    songplay_cols = [  # order matters
         "ts",
         "userId",
         "sessionId",
@@ -99,9 +99,9 @@ def process_log_df(cursor, df):
         "length",
         "artist",
     ]
-    other_foreign_key_cols = [ # order matters
-        'song_id',
-        'artist_id',
+    other_foreign_key_cols = [  # order matters
+        "song_id",
+        "artist_id",
     ]
     temp_df = df[songplay_cols + to_get_other_foreign_key_cols]
     song_artist_df = select_merged_song_artist_df(cursor)
@@ -120,9 +120,11 @@ def bulk_insert_into_table(cursor, query, df):
     values = [tuple(a) for a in df.values]
     extras.execute_values(cursor, query, values)
 
+
 def single_insert_into_table(cursor, query, df):
     for row in df.itertuples(index=False):
         cursor.execute(query, row)
+
 
 def select_merged_song_artist_df(cursor):
     cursor.execute(song_artist_table_select)
